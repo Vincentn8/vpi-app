@@ -28,7 +28,7 @@ function migrateData(raw) {
       if (old) { try { raw = JSON.parse(old); break; } catch {} }
     }
   }
-  if (!raw) return { invoices:[], catalog:DEFAULT_CATALOG, customers:[], expenses:[], nextInvoiceNum:1001, biz:DEFAULT_BIZ };
+  if (!raw) return { invoices:[], catalog:DEFAULT_CATALOG, customers:[], expenses:[], nextInvoiceNum:1317, biz:DEFAULT_BIZ };
   if (!raw.expenses) raw.expenses = [];
   if (!raw.biz) raw.biz = DEFAULT_BIZ;
   if (!raw.catalog) raw.catalog = DEFAULT_CATALOG;
