@@ -284,7 +284,7 @@ export default function App() {
   const expenses  = data.expenses||[];
   const biz       = data.biz||DEFAULT_BIZ;
   const ac        = biz.accentColor||"#1a6fba";
-  const nextNum   = data.nextInvoiceNum||1001;
+  const nextNum   = data.nextInvoiceNum||1317;
 
   const sub      = invoice.lines.reduce((s,l)=>s+l.price*l.qty,0);
   const discAmt  = invoice.discountType==="pct"?sub*(Number(invoice.discountVal||0)/100):Number(invoice.discountVal||0);
