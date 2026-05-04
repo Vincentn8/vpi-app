@@ -34,7 +34,7 @@ function migrateData(raw) {
   if (!raw.catalog) raw.catalog = DEFAULT_CATALOG;
   if (!raw.customers) raw.customers = [];
   if (!raw.invoices) raw.invoices = [];
-  if (!raw.nextInvoiceNum) raw.nextInvoiceNum = 1001;
+  if (!raw.nextInvoiceNum) raw.nextInvoiceNum = 1317;
   return raw;
 }
 
