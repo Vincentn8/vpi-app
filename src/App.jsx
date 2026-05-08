@@ -1,10 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { createClient } from "@supabase/supabase-js";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// STORAGE — migrates old keys so user data is never lost
+// SUPABASE CLIENT
 // ─────────────────────────────────────────────────────────────────────────────
-const STORAGE_KEY = "vpi_app_v1";
+const supabase = createClient(
+  "https://lvunuybegtrememtgruj.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx2dW51eWJlZ3RyZW1lbXRncnVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4NTQ2NDMsImV4cCI6MjA5MzQzMDY0M30.5DYxWe39J1uqL6Ys-K845ujMR4IcG0M-5YQWEdfFj1I"
+);
 
+// ─────────────────────────────────────────────────────────────────────────────
+// DEFAULTS
+// ─────────────────────────────────────────────────────────────────────────────
 const DEFAULT_BIZ = {
   name: "Your Business Name",
   address: "123 Main Street\nCity, ST 00000",
@@ -21,27 +28,58 @@ const DEFAULT_CATALOG = [
   { id: 3, name: "Consultation", price: 95.0,  unit: "hr", costs: [] },
 ];
 
-function migrateData(raw) {
-  if (!raw) {
-    for (const key of ["invoice_app_v3","invoice_app_data_v2","invoice_app_data"]) {
-      const old = localStorage.getItem(key);
-      if (old) { try { raw = JSON.parse(old); break; } catch {} }
-    }
-  }
-  if (!raw) return { invoices:[], catalog:DEFAULT_CATALOG, customers:[], expenses:[], nextInvoiceNum:1317, biz:DEFAULT_BIZ };
-  if (!raw.expenses) raw.expenses = [];
-  if (!raw.biz) raw.biz = DEFAULT_BIZ;
-  if (!raw.catalog) raw.catalog = DEFAULT_CATALOG;
-  if (!raw.customers) raw.customers = [];
-  if (!raw.invoices) raw.invoices = [];
-  if (!raw.nextInvoiceNum) raw.nextInvoiceNum = 1317;
-  return raw;
+// ─────────────────────────────────────────────────────────────────────────────
+// SUPABASE DB HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+async function dbGetSetting(key) {
+  try {
+    const { data } = await supabase.from("settings").select("value").eq("key", key).single();
+    return data ? data.value : null;
+  } catch { return null; }
 }
 
-function loadData() {
-  try { const r = localStorage.getItem(STORAGE_KEY); return migrateData(r ? JSON.parse(r) : null); } catch { return migrateData(null); }
+async function dbSetSetting(key, value) {
+  try {
+    await supabase.from("settings").upsert({ key, value }, { onConflict: "key" });
+  } catch {}
 }
-function saveData(d) { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); } catch {} }
+
+async function dbGetAll(table) {
+  try {
+    const { data } = await supabase.from(table).select("*").order("id", { ascending: false });
+    return (data || []).map(r => r.data);
+  } catch { return []; }
+}
+
+async function dbUpsert(table, item) {
+  try {
+    await supabase.from(table).upsert({ id: item.id, data: item }, { onConflict: "id" });
+  } catch {}
+}
+
+async function dbDelete(table, id) {
+  try {
+    await supabase.from(table).delete().eq("id", id);
+  } catch {}
+}
+
+async function dbGetBiz() {
+  try {
+    const { data } = await supabase.from("businesses").select("data").limit(1).single();
+    return data ? data.data : null;
+  } catch { return null; }
+}
+
+async function dbSaveBiz(bizData) {
+  try {
+    const { data } = await supabase.from("businesses").select("id").limit(1).single();
+    if (data) {
+      await supabase.from("businesses").update({ data: bizData }).eq("id", data.id);
+    } else {
+      await supabase.from("businesses").insert({ data: bizData });
+    }
+  } catch {}
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // UTILS
@@ -56,25 +94,11 @@ const STATUS_BG    = { draft:"#f0f0f0", sent:"#e8f0fb", paid:"#e6f7ea", void:"#f
 const STATUS_LABEL = { draft:"DRAFT", sent:"SENT", paid:"PAID", void:"VOID" };
 const EXPENSE_CATS = ["Supplies","Materials","Travel","Labor/Time","Equipment","Marketing","Utilities","Fuel","Shipping","Other"];
 
-// ─────────────────────────────────────────────────────────────────────────────
-// LIGHT MODE THEME CONSTANTS
-// ─────────────────────────────────────────────────────────────────────────────
 const T = {
-  bg:       "#f5f6f8",   // page background
-  surface:  "#ffffff",   // cards, inputs
-  border:   "#dde1e7",   // borders
-  border2:  "#c8cdd6",   // stronger borders
-  text:     "#111827",   // primary text
-  textMed:  "#374151",   // secondary text
-  textSoft: "#6b7280",   // muted text
-  textFaint:"#9ca3af",   // very muted
-  hover:    "#f0f4ff",   // hover state
-  positive: "#166534",   // green text
-  posBg:    "#dcfce7",   // green bg
-  negative: "#991b1b",   // red text
-  negBg:    "#fee2e2",   // red bg
-  navBg:    "#ffffff",   // nav background
-  navBorder:"#e5e7eb",   // nav border
+  bg:"#f5f6f8", surface:"#ffffff", border:"#dde1e7", border2:"#c8cdd6",
+  text:"#111827", textMed:"#374151", textSoft:"#6b7280", textFaint:"#9ca3af",
+  hover:"#f0f4ff", positive:"#166534", posBg:"#dcfce7", negative:"#991b1b",
+  negBg:"#fee2e2", navBg:"#ffffff", navBorder:"#e5e7eb",
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -82,45 +106,39 @@ const T = {
 // ─────────────────────────────────────────────────────────────────────────────
 function Badge({ status, small }) {
   const s = status||"draft";
-  return <span style={{
-    background: STATUS_BG[s], color: STATUS_COLOR[s],
-    border: `1px solid ${STATUS_COLOR[s]}55`,
-    borderRadius: 4, padding: small?"2px 7px":"3px 9px",
-    fontSize: small?9:10, fontWeight:"bold", letterSpacing:1
-  }}>{STATUS_LABEL[s]}</span>;
+  return <span style={{ background:STATUS_BG[s], color:STATUS_COLOR[s], border:`1px solid ${STATUS_COLOR[s]}55`, borderRadius:4, padding:small?"2px 7px":"3px 9px", fontSize:small?9:10, fontWeight:"bold", letterSpacing:1 }}>{STATUS_LABEL[s]}</span>;
 }
 
 function Section({ label, children, ac }) {
-  return (
-    <div style={{ marginBottom:16 }}>
-      <div style={{ fontSize:9, color:ac||T.textSoft, letterSpacing:3, marginBottom:8, fontWeight:"bold", textTransform:"uppercase" }}>{label}</div>
-      {children}
-    </div>
-  );
+  return <div style={{ marginBottom:16 }}><div style={{ fontSize:9, color:ac||T.textSoft, letterSpacing:3, marginBottom:8, fontWeight:"bold" }}>{label}</div>{children}</div>;
 }
 
 function Card({ children, style }) {
   return <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:10, padding:"14px 15px", boxShadow:"0 1px 3px rgba(0,0,0,0.06)", ...style }}>{children}</div>;
 }
 
-function Divider() {
-  return <div style={{ height:1, background:T.border, margin:"8px 0" }} />;
+function Spinner() {
+  return <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"60px 20px", gap:16 }}>
+    <div style={{ width:36, height:36, border:`3px solid ${T.border}`, borderTop:"3px solid #1a6fba", borderRadius:"50%", animation:"spin 0.8s linear infinite" }} />
+    <div style={{ color:T.textSoft, fontSize:13 }}>Loading your data…</div>
+    <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+  </div>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SEARCHABLE ITEM PICKER
+// ITEM PICKER
 // ─────────────────────────────────────────────────────────────────────────────
 function ItemPicker({ catalog, onSelect, ac }) {
-  const [q, setQ] = useState(""); const [open, setOpen] = useState(false);
-  const [qty, setQty] = useState(1); const [chosen, setChosen] = useState(null);
-  const ref = useRef();
-  const list = catalog.filter(c=>c.name.toLowerCase().includes(q.toLowerCase()));
+  const [q,setQ]=useState(""); const [open,setOpen]=useState(false);
+  const [qty,setQty]=useState(1); const [chosen,setChosen]=useState(null);
+  const ref=useRef();
+  const list=catalog.filter(c=>c.name.toLowerCase().includes(q.toLowerCase()));
   useEffect(()=>{ const fn=e=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false);}; document.addEventListener("mousedown",fn); return()=>document.removeEventListener("mousedown",fn); },[]);
   return (
     <div>
       <div ref={ref} style={{ position:"relative" }}>
         <label style={lbl(ac)}>SEARCH ITEM</label>
-        <input style={{ ...inp, marginBottom:0 }} placeholder="Type to search catalog…" value={q} onFocus={()=>setOpen(true)} onChange={e=>{setQ(e.target.value);setChosen(null);setOpen(true);}} />
+        <input style={{ ...inp,marginBottom:0 }} placeholder="Type to search catalog…" value={q} onFocus={()=>setOpen(true)} onChange={e=>{setQ(e.target.value);setChosen(null);setOpen(true);}} />
         {open&&<div style={{ position:"absolute",top:"100%",left:0,right:0,zIndex:300,background:T.surface,border:`1px solid ${ac}`,borderTop:"none",borderRadius:"0 0 8px 8px",maxHeight:220,overflowY:"auto",boxShadow:"0 4px 12px rgba(0,0,0,0.12)" }}>
           {list.length===0&&<div style={{ padding:"12px 14px",color:T.textSoft,fontSize:13 }}>No items found</div>}
           {list.map(c=><div key={c.id} onMouseDown={()=>{setChosen(c);setQ(c.name);setOpen(false);}} style={{ padding:"11px 14px",cursor:"pointer",fontSize:13,display:"flex",justifyContent:"space-between",borderBottom:`1px solid ${T.border}` }} onMouseEnter={e=>e.currentTarget.style.background=T.hover} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><span style={{ color:T.text,fontWeight:"500" }}>{c.name}</span><span style={{ color:ac,fontWeight:"bold" }}>{fmt(c.price)}/{c.unit}</span></div>)}
@@ -129,7 +147,7 @@ function ItemPicker({ catalog, onSelect, ac }) {
       {chosen&&<div style={{ display:"flex",gap:8,marginTop:8,alignItems:"flex-end" }}>
         <div style={{ flex:1 }}><label style={lbl(ac)}>QTY</label><input type="number" min="1" style={inp} value={qty} onChange={e=>setQty(e.target.value)} /></div>
         <div style={{ fontSize:12,color:T.textSoft,paddingBottom:12,whiteSpace:"nowrap" }}>= {fmt(chosen.price*(Number(qty)||1))}</div>
-        <button onClick={()=>{onSelect(chosen,Number(qty)||1);setChosen(null);setQ("");setQty(1);}} style={{ ...btn,padding:"10px 20px",background:ac,color:"#fff",fontSize:18,fontWeight:"bold" }}>+</button>
+        <button onClick={()=>{onSelect(chosen,Number(qty)||1);setChosen(null);setQ("");setQty(1);}} style={{ ...btn,padding:"10px 20px",background:ac,color:"#fff",fontSize:18 }}>+</button>
       </div>}
     </div>
   );
@@ -139,12 +157,12 @@ function ItemPicker({ catalog, onSelect, ac }) {
 // CUSTOMER PICKER
 // ─────────────────────────────────────────────────────────────────────────────
 function CustomerPicker({ customers, value, onChange, ac }) {
-  const [q, setQ] = useState(value?.business||""); const [open, setOpen] = useState(false);
-  const ref = useRef();
-  const list = customers.filter(c=>c.business.toLowerCase().includes(q.toLowerCase())||(c.customerNum||"").toLowerCase().includes(q.toLowerCase()));
+  const [q,setQ]=useState(value?.business||""); const [open,setOpen]=useState(false);
+  const ref=useRef();
+  const list=customers.filter(c=>c.business.toLowerCase().includes(q.toLowerCase())||(c.customerNum||"").toLowerCase().includes(q.toLowerCase()));
   useEffect(()=>{ const fn=e=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false);}; document.addEventListener("mousedown",fn); return()=>document.removeEventListener("mousedown",fn); },[]);
   return (
-    <div ref={ref} style={{ position:"relative", marginBottom:14 }}>
+    <div ref={ref} style={{ position:"relative",marginBottom:14 }}>
       <label style={lbl(ac)}>BILL TO — SELECT CLIENT</label>
       <div style={{ display:"flex",gap:6 }}>
         <input style={{ ...inp,flex:1 }} placeholder="Search clients…" value={q} onFocus={()=>setOpen(true)} onChange={e=>{setQ(e.target.value);onChange(null);setOpen(true);}} />
@@ -170,11 +188,11 @@ function CustomerPicker({ customers, value, onChange, ac }) {
 // PRINT VIEW
 // ─────────────────────────────────────────────────────────────────────────────
 function PrintView({ inv, biz, onClose, onMarkMyPrint }) {
-  const ac = biz.accentColor||"#1a6fba";
-  const sub = inv.lines.reduce((s,l)=>s+l.price*l.qty,0);
-  const disc = inv.discountType==="pct"?sub*(Number(inv.discountVal||0)/100):Number(inv.discountVal||0);
-  const tax  = sub*(Number(inv.taxRate||0)/100);
-  const total = sub-disc+tax;
+  const ac=biz.accentColor||"#1a6fba";
+  const sub=inv.lines.reduce((s,l)=>s+l.price*l.qty,0);
+  const disc=inv.discountType==="pct"?sub*(Number(inv.discountVal||0)/100):Number(inv.discountVal||0);
+  const tax=sub*(Number(inv.taxRate||0)/100);
+  const total=sub-disc+tax;
   return (
     <div style={{ position:"fixed",inset:0,zIndex:1000,background:"rgba(0,0,0,0.6)",overflowY:"auto",display:"flex",flexDirection:"column" }}>
       <div className="no-print" style={{ display:"flex",gap:8,padding:"12px 14px",background:"#fff",borderBottom:`1px solid ${T.border}`,flexShrink:0,flexWrap:"wrap" }}>
@@ -255,42 +273,66 @@ function ExchangeModal({ onAdd, onClose, ac }) {
 // MAIN APP
 // ─────────────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [data, setData]   = useState(()=>loadData());
-  const [view, setView]   = useState("invoice");
-  const [printInv, setPrintInv] = useState(null);
+  const [loading, setLoading]     = useState(true);
+  const [view, setView]           = useState("invoice");
+  const [printInv, setPrintInv]   = useState(null);
   const [showExchange, setShowExchange] = useState(false);
 
-  const [analyticsFilter, setAnalyticsFilter] = useState("month");
-  const [histSearch, setHistSearch]   = useState("");
-  const [histStatus, setHistStatus]   = useState("all");
-  const [expandedInv, setExpandedInv] = useState(null);
-  const [savedMsg, setSavedMsg]       = useState("");
+  // ── data state ──
+  const [invoices,   setInvoices]   = useState([]);
+  const [customers,  setCustomers]  = useState([]);
+  const [catalog,    setCatalog]    = useState(DEFAULT_CATALOG);
+  const [expenses,   setExpenses]   = useState([]);
+  const [biz,        setBiz]        = useState(DEFAULT_BIZ);
+  const [nextNum,    setNextNum]    = useState(1317);
 
+  // ── ui state ──
+  const [analyticsFilter, setAnalyticsFilter] = useState("month");
+  const [histSearch,  setHistSearch]  = useState("");
+  const [histStatus,  setHistStatus]  = useState("all");
+  const [expandedInv, setExpandedInv] = useState(null);
+  const [savedMsg,    setSavedMsg]    = useState("");
+  const [newItem,     setNewItem]     = useState({ name:"",price:"",unit:"ea",costs:[] });
+  const [newCostRow,  setNewCostRow]  = useState({ label:"",amount:"" });
+  const [newCust,     setNewCust]     = useState({ business:"",name:"",address:"",customerNum:"" });
+  const [newExp,      setNewExp]      = useState({ date:today(),category:"Supplies",description:"",amount:"",miles:"",ratePerMile:"0.67" });
+  const [bizEdit,     setBizEdit]     = useState(false);
+  const [bizForm,     setBizForm]     = useState(DEFAULT_BIZ);
+
+  const ac = biz.accentColor || "#1a6fba";
+
+  // ── load all data on mount ──
+  useEffect(()=>{
+    async function loadAll() {
+      setLoading(true);
+      const [invData, custData, catData, expData, bizData, numData] = await Promise.all([
+        dbGetAll("invoices"),
+        dbGetAll("customers"),
+        dbGetAll("catalog"),
+        dbGetAll("expenses"),
+        dbGetBiz(),
+        dbGetSetting("nextInvoiceNum"),
+      ]);
+      setInvoices(invData || []);
+      setCustomers(custData || []);
+      setCatalog(catData.length > 0 ? catData : DEFAULT_CATALOG);
+      setExpenses(expData || []);
+      if (bizData) { setBiz(bizData); setBizForm(bizData); }
+      if (numData) setNextNum(numData);
+      setLoading(false);
+    }
+    loadAll();
+  }, []);
+
+  // ── invoice math ──
   const blank = ()=>({ customer:null, date:today(), dueDate:"", notes:"", lines:[], status:"draft", taxRate:"", discountVal:"", discountType:"pct", exchanges:[] });
   const [invoice, setInvoice] = useState(blank);
+  const sub     = invoice.lines.reduce((s,l)=>s+l.price*l.qty, 0);
+  const discAmt = invoice.discountType==="pct" ? sub*(Number(invoice.discountVal||0)/100) : Number(invoice.discountVal||0);
+  const taxAmt  = sub*(Number(invoice.taxRate||0)/100);
+  const invTotal = sub - discAmt + taxAmt;
 
-  const [newItem, setNewItem]       = useState({ name:"",price:"",unit:"ea",costs:[] });
-  const [newCostRow, setNewCostRow] = useState({ label:"",amount:"" });
-  const [newCust, setNewCust]       = useState({ business:"",name:"",address:"",customerNum:"" });
-  const [newExp, setNewExp]         = useState({ date:today(),category:"Supplies",description:"",amount:"",miles:"",ratePerMile:"0.67" });
-  const [bizEdit, setBizEdit]       = useState(false);
-  const [bizForm, setBizForm]       = useState(data.biz||DEFAULT_BIZ);
-
-  useEffect(()=>{ saveData(data); },[data]);
-
-  const catalog   = data.catalog||DEFAULT_CATALOG;
-  const customers = data.customers||[];
-  const invoices  = data.invoices||[];
-  const expenses  = data.expenses||[];
-  const biz       = data.biz||DEFAULT_BIZ;
-  const ac        = biz.accentColor||"#1a6fba";
-  const nextNum   = data.nextInvoiceNum||1317;
-
-  const sub      = invoice.lines.reduce((s,l)=>s+l.price*l.qty,0);
-  const discAmt  = invoice.discountType==="pct"?sub*(Number(invoice.discountVal||0)/100):Number(invoice.discountVal||0);
-  const taxAmt   = sub*(Number(invoice.taxRate||0)/100);
-  const invTotal = sub-discAmt+taxAmt;
-
+  // ── invoice actions ──
   function addLine(item, qty) {
     const ex=invoice.lines.findIndex(l=>l.itemId===item.id);
     if(ex>=0){const lines=[...invoice.lines];lines[ex]={...lines[ex],qty:lines[ex].qty+qty};setInvoice({...invoice,lines});}
@@ -298,47 +340,102 @@ export default function App() {
   }
   function removeLine(i){setInvoice({...invoice,lines:invoice.lines.filter((_,j)=>j!==i)});}
   function updateQty(i,q){const lines=[...invoice.lines];lines[i]={...lines[i],qty:Math.max(1,Number(q))};setInvoice({...invoice,lines});}
-  function saveInvoice(){
+
+  async function saveInvoice() {
     if(!invoice.customer||invoice.lines.length===0) return;
-    const num=nextNum;
+    const num = nextNum;
     const s=invoice.lines.reduce((x,l)=>x+l.price*l.qty,0);
     const d=invoice.discountType==="pct"?s*(Number(invoice.discountVal||0)/100):Number(invoice.discountVal||0);
     const t=s*(Number(invoice.taxRate||0)/100);
     const saved={...invoice,id:Date.now(),invoiceNum:num,subtotal:s,total:s-d+t,savedAt:new Date().toISOString(),printed:false};
-    setData(x=>({...x,invoices:[saved,...x.invoices],nextInvoiceNum:num+1}));
-    setInvoice(blank()); setSavedMsg(`Invoice #${num} saved!`); setTimeout(()=>setSavedMsg(""),4000); setView("history");
+    const newNextNum = num + 1;
+    await Promise.all([
+      dbUpsert("invoices", saved),
+      dbSetSetting("nextInvoiceNum", newNextNum),
+    ]);
+    setInvoices(x=>[saved,...x]);
+    setNextNum(newNextNum);
+    setInvoice(blank());
+    setSavedMsg(`Invoice #${num} saved!`);
+    setTimeout(()=>setSavedMsg(""),4000);
+    setView("history");
   }
-  function setStatus(id,status){setData(d=>({...d,invoices:d.invoices.map(i=>i.id===id?{...i,status}:i)}));}
-  function markPrinted(id){setData(d=>({...d,invoices:d.invoices.map(i=>i.id===id?{...i,printed:true,printedAt:new Date().toISOString()}:i)}));}
-  function deleteInvoice(id){setData(d=>({...d,invoices:d.invoices.filter(i=>i.id!==id)}));if(expandedInv===id)setExpandedInv(null);}
 
-  function addCatalogItem(){
+  async function setStatus(id, status) {
+    const inv = invoices.find(i=>i.id===id);
+    if(!inv) return;
+    const updated = {...inv, status};
+    await dbUpsert("invoices", updated);
+    setInvoices(x=>x.map(i=>i.id===id?updated:i));
+  }
+
+  async function markPrinted(id) {
+    const inv = invoices.find(i=>i.id===id);
+    if(!inv) return;
+    const updated = {...inv, printed:true, printedAt:new Date().toISOString()};
+    await dbUpsert("invoices", updated);
+    setInvoices(x=>x.map(i=>i.id===id?updated:i));
+  }
+
+  async function deleteInvoice(id) {
+    await dbDelete("invoices", id);
+    setInvoices(x=>x.filter(i=>i.id!==id));
+    if(expandedInv===id) setExpandedInv(null);
+  }
+
+  // ── catalog actions ──
+  async function addCatalogItem() {
     if(!newItem.name||!newItem.price) return;
-    setData(d=>({...d,catalog:[...d.catalog,{id:Date.now(),name:newItem.name,price:parseFloat(newItem.price),unit:newItem.unit,costs:newItem.costs||[]}]}));
-    setNewItem({name:"",price:"",unit:"ea",costs:[]}); setNewCostRow({label:"",amount:""});
+    const item = {id:Date.now(),name:newItem.name,price:parseFloat(newItem.price),unit:newItem.unit,costs:newItem.costs||[]};
+    await dbUpsert("catalog", item);
+    setCatalog(x=>[...x, item]);
+    setNewItem({name:"",price:"",unit:"ea",costs:[]});
+    setNewCostRow({label:"",amount:""});
   }
-  function delCatalog(id){setData(d=>({...d,catalog:d.catalog.filter(c=>c.id!==id)}));}
+  async function delCatalog(id) {
+    await dbDelete("catalog", id);
+    setCatalog(x=>x.filter(c=>c.id!==id));
+  }
 
-  function addCustomer(){
+  // ── customer actions ──
+  async function addCustomer() {
     if(!newCust.business) return;
-    setData(d=>({...d,customers:[...d.customers,{id:Date.now(),...newCust}]}));
+    const cust = {id:Date.now(),...newCust};
+    await dbUpsert("customers", cust);
+    setCustomers(x=>[...x, cust]);
     setNewCust({business:"",name:"",address:"",customerNum:""});
   }
-  function delCustomer(id){setData(d=>({...d,customers:d.customers.filter(c=>c.id!==id)}));}
+  async function delCustomer(id) {
+    await dbDelete("customers", id);
+    setCustomers(x=>x.filter(c=>c.id!==id));
+  }
 
-  function addExpense(){
+  // ── expense actions ──
+  async function addExpense() {
     if(!newExp.description||!newExp.amount) return;
-    const miles=parseFloat(newExp.miles||0); const rate=parseFloat(newExp.ratePerMile||0.67);
+    const miles=parseFloat(newExp.miles||0);
+    const rate=parseFloat(newExp.ratePerMile||0.67);
     const milesCost=newExp.category==="Travel"?miles*rate:0;
     const total=parseFloat(newExp.amount)+milesCost;
-    setData(d=>({...d,expenses:[{id:Date.now(),...newExp,miles,milesCost,total},...d.expenses]}));
+    const exp={id:Date.now(),...newExp,miles,milesCost,total};
+    await dbUpsert("expenses", exp);
+    setExpenses(x=>[exp,...x]);
     setNewExp({date:today(),category:"Supplies",description:"",amount:"",miles:"",ratePerMile:"0.67"});
   }
-  function delExpense(id){setData(d=>({...d,expenses:d.expenses.filter(e=>e.id!==id)}));}
+  async function delExpense(id) {
+    await dbDelete("expenses", id);
+    setExpenses(x=>x.filter(e=>e.id!==id));
+  }
 
-  function saveBiz(){setData(d=>({...d,biz:bizForm}));setBizEdit(false);}
+  // ── biz actions ──
+  async function saveBiz() {
+    await dbSaveBiz(bizForm);
+    setBiz(bizForm);
+    setBizEdit(false);
+  }
   function handleLogo(e){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>setBizForm(b=>({...b,logo:ev.target.result}));r.readAsDataURL(f);}
 
+  // ── filtered history ──
   const filteredInvoices = invoices.filter(inv=>{
     if(histStatus!=="all"&&inv.status!==histStatus) return false;
     if(!histSearch) return true;
@@ -346,14 +443,16 @@ export default function App() {
     return String(inv.invoiceNum||"").includes(q)||(inv.customer?.business||"").toLowerCase().includes(q)||String(inv.total||"").includes(q)||inv.lines.some(l=>l.name.toLowerCase().includes(q));
   });
 
+  // ── customer sales rankings ──
   const custSales = customers.map(c=>{
     const ci=invoices.filter(i=>i.customer?.id===c.id);
     return {...c,salesTotal:ci.reduce((s,i)=>s+(i.total||0),0),salesPaid:ci.filter(i=>i.status==="paid").reduce((s,i)=>s+(i.total||0),0),invoiceCount:ci.length};
   }).sort((a,b)=>b.salesTotal-a.salesTotal);
 
+  // ── analytics ──
   const stats = useCallback(()=>{
     const now=new Date();
-    let fi=invoices,fe=expenses;
+    let fi=invoices, fe=expenses;
     if(analyticsFilter==="day"){fi=invoices.filter(i=>i.date===today());fe=expenses.filter(e=>e.date===today());}
     else if(analyticsFilter==="week"){const s=new Date();s.setDate(s.getDate()-7);fi=invoices.filter(i=>i.date&&new Date(i.date)>=s);fe=expenses.filter(e=>e.date&&new Date(e.date)>=s);}
     else if(analyticsFilter==="month"){const ym=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;fi=invoices.filter(i=>i.date?.startsWith(ym));fe=expenses.filter(e=>e.date?.startsWith(ym));}
@@ -377,13 +476,15 @@ export default function App() {
   const navItems=[["invoice","NEW"],["history","HISTORY"],["analytics","P&L"],["customers","CLIENTS"],["catalog","ITEMS"],["expenses","EXPENSES"],["biz","MY BIZ"]];
   const canSave=invoice.customer&&invoice.lines.length>0;
 
+  if (loading) return <div style={{ minHeight:"100vh",background:T.bg,maxWidth:480,margin:"0 auto" }}><Spinner /></div>;
+
   return (
     <div style={{ minHeight:"100vh",background:T.bg,color:T.text,fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",maxWidth:480,margin:"0 auto" }}>
 
       {printInv&&<PrintView inv={printInv} biz={biz} onClose={()=>setPrintInv(null)} onMarkMyPrint={()=>{markPrinted(printInv.id);setPrintInv(null);}} />}
       {showExchange&&<ExchangeModal ac={ac} onAdd={ex=>setInvoice(v=>({...v,exchanges:[...(v.exchanges||[]),ex]}))} onClose={()=>setShowExchange(false)} />}
 
-      {/* ── HEADER ── */}
+      {/* HEADER */}
       <div style={{ background:T.surface,borderBottom:`2px solid ${ac}`,padding:"14px 16px 12px",position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 8px rgba(0,0,0,0.08)" }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start" }}>
           <div>
@@ -399,14 +500,14 @@ export default function App() {
         </div>
       </div>
 
-      {/* ── NAV ── */}
-      <div style={{ display:"flex",background:T.navBg,borderBottom:`1px solid ${T.navBorder}`,overflowX:"auto",boxShadow:"0 1px 4px rgba(0,0,0,0.04)" }}>
-        {navItems.map(([v,l])=><button key={v} onClick={()=>setView(v)} style={{ flex:"0 0 auto",padding:"10px 13px",fontSize:9,fontFamily:"inherit",letterSpacing:1,border:"none",cursor:"pointer",whiteSpace:"nowrap",borderBottom:view===v?`2px solid ${ac}`:"2px solid transparent",background:T.navBg,color:view===v?ac:T.textSoft,fontWeight:view===v?"700":"500",transition:"all 0.15s" }}>{l}</button>)}
+      {/* NAV */}
+      <div style={{ display:"flex",background:T.navBg,borderBottom:`1px solid ${T.navBorder}`,overflowX:"auto" }}>
+        {navItems.map(([v,l])=><button key={v} onClick={()=>setView(v)} style={{ flex:"0 0 auto",padding:"10px 13px",fontSize:9,fontFamily:"inherit",letterSpacing:1,border:"none",cursor:"pointer",whiteSpace:"nowrap",borderBottom:view===v?`2px solid ${ac}`:"2px solid transparent",background:T.navBg,color:view===v?ac:T.textSoft,fontWeight:view===v?"700":"500" }}>{l}</button>)}
       </div>
 
       <div style={{ padding:"16px 14px 100px" }}>
 
-        {/* ══ NEW INVOICE ══ */}
+        {/* NEW INVOICE */}
         {view==="invoice"&&<>
           <CustomerPicker customers={customers} value={invoice.customer} onChange={c=>setInvoice({...invoice,customer:c})} ac={ac} />
           {customers.length===0&&<div style={{ fontSize:12,color:T.textSoft,marginBottom:14,padding:"10px 12px",background:T.surface,borderRadius:8,border:`1px solid ${T.border}` }}>No clients yet — <span style={{ color:ac,cursor:"pointer",fontWeight:"bold" }} onClick={()=>setView("customers")}>add one in Clients tab →</span></div>}
@@ -420,14 +521,13 @@ export default function App() {
           </Card>
           <button onClick={()=>setShowExchange(true)} style={{ ...btn,width:"100%",padding:10,background:T.surface,border:`1px solid ${T.border}`,color:T.textMed,fontSize:11,letterSpacing:1,marginBottom:12 }}>⇄ ADD ITEM EXCHANGE / SUBSTITUTION</button>
           {(invoice.exchanges||[]).length>0&&<div style={{ marginBottom:12 }}>{invoice.exchanges.map((ex,i)=><div key={i} style={{ background:"#fff8e1",border:"1px solid #f0c040",borderRadius:8,padding:"8px 12px",marginBottom:6,fontSize:12,display:"flex",justifyContent:"space-between",alignItems:"center" }}><span><span style={{ color:"#c0392b",fontWeight:"bold" }}>{ex.from}</span> → <span style={{ color:T.positive,fontWeight:"bold" }}>{ex.to}</span>{ex.note&&<span style={{ color:T.textSoft }}> ({ex.note})</span>}</span><button onClick={()=>setInvoice(v=>({...v,exchanges:v.exchanges.filter((_,j)=>j!==i)}))} style={{ background:"none",border:"none",color:T.textSoft,cursor:"pointer",fontSize:14 }}>✕</button></div>)}</div>}
-
           {invoice.lines.length>0&&<div style={{ marginBottom:14 }}>
             <div style={{ fontSize:10,color:ac,letterSpacing:3,marginBottom:10,fontWeight:"bold" }}>LINE ITEMS</div>
-            {invoice.lines.map((l,i)=><div key={i} style={{ background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,padding:"10px 12px",marginBottom:7,display:"flex",alignItems:"center",gap:8,boxShadow:"0 1px 3px rgba(0,0,0,0.04)" }}>
+            {invoice.lines.map((l,i)=><div key={i} style={{ background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,padding:"10px 12px",marginBottom:7,display:"flex",alignItems:"center",gap:8 }}>
               <div style={{ flex:1 }}><div style={{ fontSize:14,fontWeight:"600",color:T.text }}>{l.name}</div><div style={{ fontSize:11,color:T.textSoft,marginTop:1 }}>{fmt(l.price)}/{l.unit}</div></div>
               <input type="number" min="1" value={l.qty} onChange={e=>updateQty(i,e.target.value)} style={{ width:46,...inp,padding:"5px 7px",fontSize:14,textAlign:"center" }} />
               <div style={{ fontSize:14,color:ac,fontWeight:"bold",minWidth:64,textAlign:"right" }}>{fmt(l.price*l.qty)}</div>
-              <button onClick={()=>removeLine(i)} style={{ background:"none",border:"none",color:"#c0392b",cursor:"pointer",fontSize:18,lineHeight:1 }}>✕</button>
+              <button onClick={()=>removeLine(i)} style={{ background:"none",border:"none",color:"#c0392b",cursor:"pointer",fontSize:18 }}>✕</button>
             </div>)}
             <Card style={{ marginTop:10 }}>
               <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10 }}>
@@ -436,14 +536,13 @@ export default function App() {
               </div>
               {discAmt>0&&<div style={{ display:"flex",justifyContent:"space-between",fontSize:13,color:T.positive,marginBottom:4 }}><span>Discount</span><span>-{fmt(discAmt)}</span></div>}
               {taxAmt>0&&<div style={{ display:"flex",justifyContent:"space-between",fontSize:13,color:T.textMed,marginBottom:4 }}><span>Tax ({invoice.taxRate}%)</span><span>{fmt(taxAmt)}</span></div>}
-              <Divider />
+              <div style={{ height:1,background:T.border,margin:"8px 0" }} />
               <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:8 }}>
                 <span style={{ fontSize:12,letterSpacing:2,color:T.textSoft,fontWeight:"600" }}>TOTAL</span>
                 <span style={{ fontSize:24,fontWeight:"800",color:ac }}>{fmt(invTotal)}</span>
               </div>
             </Card>
           </div>}
-
           <div style={{ marginBottom:14 }}>
             <label style={lbl(ac)}>INITIAL STATUS</label>
             <div style={{ display:"flex",gap:8 }}>{["draft","sent"].map(s=><button key={s} onClick={()=>setInvoice({...invoice,status:s})} style={{ flex:1,padding:"10px",fontSize:11,fontFamily:"inherit",letterSpacing:1,border:`2px solid ${invoice.status===s?STATUS_COLOR[s]:T.border}`,borderRadius:8,cursor:"pointer",background:invoice.status===s?STATUS_BG[s]:T.surface,color:invoice.status===s?STATUS_COLOR[s]:T.textSoft,fontWeight:invoice.status===s?"700":"400" }}>{STATUS_LABEL[s]}</button>)}</div>
@@ -454,9 +553,9 @@ export default function App() {
           {!canSave&&<div style={{ textAlign:"center",color:T.textFaint,fontSize:12,marginTop:8 }}>{!invoice.customer?"Select a client to continue":"Add at least one item"}</div>}
         </>}
 
-        {/* ══ HISTORY ══ */}
+        {/* HISTORY */}
         {view==="history"&&<>
-          {savedMsg&&<div style={{ textAlign:"center",color:T.positive,marginBottom:12,fontSize:13,fontWeight:"bold",padding:12,background:T.posBg,borderRadius:8,border:`1px solid #86efac` }}>✓ {savedMsg}</div>}
+          {savedMsg&&<div style={{ textAlign:"center",color:T.positive,marginBottom:12,fontSize:13,fontWeight:"bold",padding:12,background:T.posBg,borderRadius:8 }}>✓ {savedMsg}</div>}
           <div style={{ position:"relative",marginBottom:10 }}>
             <label style={lbl(ac)}>SEARCH INVOICES</label>
             <input style={inp} placeholder="Invoice #, client, item, or total…" value={histSearch} onChange={e=>setHistSearch(e.target.value)} />
@@ -492,7 +591,7 @@ export default function App() {
               </div>}
               {inv.exchanges?.length>0&&<div style={{ marginBottom:10,padding:"8px 10px",background:"#fff8e1",borderRadius:8,border:"1px solid #f0c040" }}><div style={{ fontSize:9,color:"#92610a",letterSpacing:2,marginBottom:4,fontWeight:"bold" }}>EXCHANGES</div>{inv.exchanges.map((ex,i)=><div key={i} style={{ fontSize:12,color:T.textMed,marginBottom:2 }}>⇄ {ex.from} → {ex.to}{ex.note&&` (${ex.note})`}</div>)}</div>}
               {inv.lines.map((l,i)=><div key={i} style={{ display:"flex",justifyContent:"space-between",fontSize:13,padding:"5px 0",borderBottom:`1px solid ${T.border}` }}><span style={{ color:T.textMed }}>{l.name} × {l.qty}</span><span style={{ color:ac,fontWeight:"600" }}>{fmt(l.price*l.qty)}</span></div>)}
-              <div style={{ display:"flex",justifyContent:"space-between",fontSize:14,fontWeight:"700",marginTop:8,paddingTop:8,borderTop:`2px solid ${ac}` }}><span style={{ color:T.text }}>Total</span><span style={{ color:ac }}>{fmt(inv.total)}</span></div>
+              <div style={{ display:"flex",justifyContent:"space-between",fontSize:14,fontWeight:"700",marginTop:8,paddingTop:8,borderTop:`2px solid ${ac}` }}><span>Total</span><span style={{ color:ac }}>{fmt(inv.total)}</span></div>
               {inv.notes&&<div style={{ marginTop:8,fontSize:12,color:T.textSoft,fontStyle:"italic" }}>{inv.notes}</div>}
               {inv.printedAt&&<div style={{ marginTop:6,fontSize:11,color:T.textFaint }}>🖨 Printed {new Date(inv.printedAt).toLocaleDateString()}</div>}
               <div style={{ display:"flex",gap:8,marginTop:12 }}>
@@ -503,58 +602,36 @@ export default function App() {
           </div>)}
         </>}
 
-        {/* ══ P&L ANALYTICS ══ */}
+        {/* P&L */}
         {view==="analytics"&&<>
           <div style={{ display:"flex",gap:6,marginBottom:16,flexWrap:"wrap" }}>
             {[["day","TODAY"],["week","WEEK"],["month","MONTH"],["year","YEAR"],["all","ALL TIME"]].map(([f,l])=><button key={f} onClick={()=>setAnalyticsFilter(f)} style={{ padding:"8px 12px",fontSize:9,fontFamily:"inherit",letterSpacing:1,border:`1.5px solid ${analyticsFilter===f?ac:T.border}`,borderRadius:7,cursor:"pointer",background:analyticsFilter===f?ac+"18":T.surface,color:analyticsFilter===f?ac:T.textSoft,fontWeight:analyticsFilter===f?"700":"400" }}>{l}</button>)}
           </div>
           <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16 }}>
-            {[["INVOICES",stats.invoiceCount,T.text],["REVENUE",fmt(stats.revenue),ac],["PAID",fmt(stats.paid),T.positive],["UNPAID",fmt(stats.unpaid),"#b45309"],["EXPENSES",fmt(stats.expTotal),"#c0392b"],["GROSS PROFIT",fmt(stats.grossProfit),stats.grossProfit>=0?T.positive:"#c0392b"]].map(([l,v,c])=><Card key={l}>
-              <div style={{ fontSize:9,color:T.textSoft,letterSpacing:2,marginBottom:5,fontWeight:"600" }}>{l}</div>
-              <div style={{ fontSize:16,fontWeight:"800",color:c }}>{v}</div>
-            </Card>)}
+            {[["INVOICES",stats.invoiceCount,T.text],["REVENUE",fmt(stats.revenue),ac],["PAID",fmt(stats.paid),T.positive],["UNPAID",fmt(stats.unpaid),"#b45309"],["EXPENSES",fmt(stats.expTotal),"#c0392b"],["GROSS PROFIT",fmt(stats.grossProfit),stats.grossProfit>=0?T.positive:"#c0392b"]].map(([l,v,c])=><Card key={l}><div style={{ fontSize:9,color:T.textSoft,letterSpacing:2,marginBottom:5,fontWeight:"600" }}>{l}</div><div style={{ fontSize:16,fontWeight:"800",color:c }}>{v}</div></Card>)}
           </div>
           {stats.revenue>0&&<Card style={{ marginBottom:16 }}>
             <div style={{ fontSize:9,color:T.textSoft,letterSpacing:2,marginBottom:8,fontWeight:"600" }}>PROFIT MARGIN</div>
             <div style={{ display:"flex",alignItems:"center",gap:10 }}>
-              <div style={{ flex:1,height:10,background:T.bg,borderRadius:5,overflow:"hidden",border:`1px solid ${T.border}` }}>
-                <div style={{ width:`${Math.max(0,Math.min(100,(stats.grossProfit/stats.revenue)*100))}%`,height:"100%",background:stats.grossProfit>=0?"#16a34a":"#c0392b",borderRadius:5,transition:"width 0.4s ease" }} />
-              </div>
+              <div style={{ flex:1,height:10,background:T.bg,borderRadius:5,overflow:"hidden",border:`1px solid ${T.border}` }}><div style={{ width:`${Math.max(0,Math.min(100,(stats.grossProfit/stats.revenue)*100))}%`,height:"100%",background:stats.grossProfit>=0?"#16a34a":"#c0392b",borderRadius:5 }} /></div>
               <span style={{ fontSize:16,fontWeight:"800",color:stats.grossProfit>=0?T.positive:"#c0392b" }}>{pct(stats.grossProfit,stats.revenue)}</span>
             </div>
           </Card>}
           <Section label="ITEMS SOLD" ac={ac}>
             {stats.items.length===0&&<div style={{ color:T.textFaint,textAlign:"center",padding:"16px 0",fontSize:13 }}>No data for this period.</div>}
-            {stats.items.map((item,i)=>{
-              const p=stats.revenue>0?(item.revenue/stats.revenue)*100:0;
-              return <div key={i} style={{ marginBottom:14 }}>
-                <div style={{ display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:4 }}><span style={{ fontWeight:"600",color:T.text }}>{item.name}</span><span style={{ color:ac,fontWeight:"bold" }}>{fmt(item.revenue)}</span></div>
-                <div style={{ display:"flex",alignItems:"center",gap:8 }}>
-                  <div style={{ flex:1,height:7,background:T.bg,borderRadius:4,overflow:"hidden",border:`1px solid ${T.border}` }}><div style={{ width:`${p}%`,height:"100%",background:ac,borderRadius:4,transition:"width 0.4s" }} /></div>
-                  <span style={{ fontSize:11,color:T.textSoft,minWidth:40 }}>×{item.qty}</span>
-                </div>
-              </div>;
-            })}
+            {stats.items.map((item,i)=>{const p=stats.revenue>0?(item.revenue/stats.revenue)*100:0;return <div key={i} style={{ marginBottom:14 }}><div style={{ display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:4 }}><span style={{ fontWeight:"600",color:T.text }}>{item.name}</span><span style={{ color:ac,fontWeight:"bold" }}>{fmt(item.revenue)}</span></div><div style={{ display:"flex",alignItems:"center",gap:8 }}><div style={{ flex:1,height:7,background:T.bg,borderRadius:4,overflow:"hidden",border:`1px solid ${T.border}` }}><div style={{ width:`${p}%`,height:"100%",background:ac,borderRadius:4 }} /></div><span style={{ fontSize:11,color:T.textSoft,minWidth:40 }}>×{item.qty}</span></div></div>;})}
           </Section>
           {Object.keys(stats.expByCat).length>0&&<Section label="EXPENSES BY CATEGORY" ac={ac}>
             {Object.entries(stats.expByCat).sort((a,b)=>b[1]-a[1]).map(([cat,amt])=><div key={cat} style={{ display:"flex",justifyContent:"space-between",fontSize:13,padding:"5px 0",borderBottom:`1px solid ${T.border}` }}><span style={{ color:T.textMed }}>{cat}</span><span style={{ color:"#c0392b",fontWeight:"600" }}>{fmt(amt)}</span></div>)}
           </Section>}
           {monthlyData.length>0&&<Section label="REVENUE — LAST 6 MONTHS" ac={ac}>
             <div style={{ display:"flex",alignItems:"flex-end",gap:6,height:100,padding:"0 2px" }}>
-              {monthlyData.map(({k,v,label})=>{
-                const max=Math.max(...monthlyData.map(x=>x.v));
-                const h=max>0?(v/max)*78:4;
-                return <div key={k} style={{ flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4 }}>
-                  <div style={{ fontSize:8,color:T.textSoft,fontWeight:"600" }}>{fmt(v).replace("$","$")}</div>
-                  <div style={{ width:"100%",height:h,background:ac,borderRadius:"4px 4px 0 0",minHeight:4,opacity:0.85 }} />
-                  <div style={{ fontSize:9,color:T.textSoft,fontWeight:"500" }}>{label}</div>
-                </div>;
-              })}
+              {monthlyData.map(({k,v,label})=>{const max=Math.max(...monthlyData.map(x=>x.v));const h=max>0?(v/max)*78:4;return <div key={k} style={{ flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4 }}><div style={{ fontSize:8,color:T.textSoft,fontWeight:"600" }}>{fmt(v)}</div><div style={{ width:"100%",height:h,background:ac,borderRadius:"4px 4px 0 0",minHeight:4,opacity:0.85 }} /><div style={{ fontSize:9,color:T.textSoft,fontWeight:"500" }}>{label}</div></div>;})}
             </div>
           </Section>}
         </>}
 
-        {/* ══ CLIENTS ══ */}
+        {/* CLIENTS */}
         {view==="customers"&&<>
           <Card style={{ marginBottom:16 }}>
             <div style={{ fontSize:10,color:ac,letterSpacing:3,marginBottom:12,fontWeight:"bold" }}>ADD CLIENT</div>
@@ -588,53 +665,30 @@ export default function App() {
           </div>)}
         </>}
 
-        {/* ══ ITEM CATALOG ══ */}
+        {/* CATALOG */}
         {view==="catalog"&&<>
           <Card style={{ marginBottom:16 }}>
             <div style={{ fontSize:10,color:ac,letterSpacing:3,marginBottom:12,fontWeight:"bold" }}>ADD NEW ITEM</div>
             <input style={{ ...inp,marginBottom:9 }} placeholder="Item name…" value={newItem.name} onChange={e=>setNewItem({...newItem,name:e.target.value})} />
             <div style={{ display:"flex",gap:8,marginBottom:10 }}>
               <input type="number" min="0" step="0.01" style={{ ...inp,flex:1 }} placeholder="Sale price ($)" value={newItem.price} onChange={e=>setNewItem({...newItem,price:e.target.value})} />
-              <select style={{ ...inp,width:80 }} value={newItem.unit} onChange={e=>setNewItem({...newItem,unit:e.target.value})}>
-                {["ea","hr","day","mo","ft","lb","oz","kg"].map(u=><option key={u} value={u}>{u}</option>)}
-              </select>
+              <select style={{ ...inp,width:80 }} value={newItem.unit} onChange={e=>setNewItem({...newItem,unit:e.target.value})}>{["ea","hr","day","mo","ft","lb","oz","kg"].map(u=><option key={u} value={u}>{u}</option>)}</select>
             </div>
             <div style={{ fontSize:10,color:T.textSoft,letterSpacing:2,marginBottom:9,fontWeight:"600" }}>COST BREAKDOWN (OPTIONAL)</div>
-            {(newItem.costs||[]).map((c,i)=><div key={i} style={{ display:"flex",gap:6,marginBottom:6,alignItems:"center" }}>
-              <div style={{ flex:1,fontSize:13,color:T.textMed,padding:"7px 11px",background:T.bg,borderRadius:7,border:`1px solid ${T.border}` }}>{c.label}</div>
-              <div style={{ fontSize:13,color:ac,fontWeight:"bold",minWidth:62,textAlign:"right" }}>{fmt(c.amount)}</div>
-              <button onClick={()=>setNewItem(ni=>({...ni,costs:ni.costs.filter((_,j)=>j!==i)}))} style={{ background:"none",border:"none",color:"#c0392b",cursor:"pointer",fontSize:16 }}>✕</button>
-            </div>)}
+            {(newItem.costs||[]).map((c,i)=><div key={i} style={{ display:"flex",gap:6,marginBottom:6,alignItems:"center" }}><div style={{ flex:1,fontSize:13,color:T.textMed,padding:"7px 11px",background:T.bg,borderRadius:7,border:`1px solid ${T.border}` }}>{c.label}</div><div style={{ fontSize:13,color:ac,fontWeight:"bold",minWidth:62,textAlign:"right" }}>{fmt(c.amount)}</div><button onClick={()=>setNewItem(ni=>({...ni,costs:ni.costs.filter((_,j)=>j!==i)}))} style={{ background:"none",border:"none",color:"#c0392b",cursor:"pointer",fontSize:16 }}>✕</button></div>)}
             <div style={{ display:"flex",gap:6,marginBottom:9 }}>
               <input style={{ ...inp,flex:1 }} placeholder="Label (Materials, Electricity…)" value={newCostRow.label} onChange={e=>setNewCostRow({...newCostRow,label:e.target.value})} />
               <input type="number" min="0" step="0.01" style={{ ...inp,width:76 }} placeholder="$" value={newCostRow.amount} onChange={e=>setNewCostRow({...newCostRow,amount:e.target.value})} />
               <button onClick={()=>{if(!newCostRow.label||!newCostRow.amount)return;setNewItem(ni=>({...ni,costs:[...(ni.costs||[]),{label:newCostRow.label,amount:parseFloat(newCostRow.amount)}]}));setNewCostRow({label:"",amount:""});}} style={{ ...btn,padding:"10px 14px",background:T.bg,border:`1px solid ${T.border}`,color:T.textMed,fontSize:16,fontWeight:"bold" }}>+</button>
             </div>
-            {newItem.costs?.length>0&&<div style={{ fontSize:12,color:T.textSoft,marginBottom:9,textAlign:"right" }}>
-              Cost: {fmt(newItem.costs.reduce((s,c)=>s+Number(c.amount),0))}
-              {newItem.price&&<span style={{ color:T.positive,fontWeight:"bold" }}> · Margin: {fmt(parseFloat(newItem.price)-newItem.costs.reduce((s,c)=>s+Number(c.amount),0))}</span>}
-            </div>}
+            {newItem.costs?.length>0&&<div style={{ fontSize:12,color:T.textSoft,marginBottom:9,textAlign:"right" }}>Cost: {fmt(newItem.costs.reduce((s,c)=>s+Number(c.amount),0))}{newItem.price&&<span style={{ color:T.positive,fontWeight:"bold" }}> · Margin: {fmt(parseFloat(newItem.price)-newItem.costs.reduce((s,c)=>s+Number(c.amount),0))}</span>}</div>}
             <button onClick={addCatalogItem} style={{ ...btn,width:"100%",padding:11,background:ac,color:"#fff",fontSize:12,letterSpacing:2,fontWeight:"700" }}>ADD TO CATALOG</button>
           </Card>
           <div style={{ fontSize:10,color:ac,letterSpacing:3,marginBottom:12,fontWeight:"bold" }}>CATALOG ({catalog.length} ITEMS)</div>
-          {catalog.map(c=>{
-            const tc=(c.costs||[]).reduce((s,x)=>s+Number(x.amount),0);
-            const mg=c.price-tc;
-            return <div key={c.id} style={{ background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:9,display:"flex",alignItems:"flex-start",gap:10,boxShadow:"0 1px 3px rgba(0,0,0,0.05)" }}>
-              <div style={{ flex:1 }}>
-                <div style={{ fontWeight:"700",fontSize:14,color:T.text }}>{c.name}</div>
-                <div style={{ fontSize:12,color:T.textSoft,marginTop:2 }}>Sale: {fmt(c.price)}/{c.unit}</div>
-                {c.costs?.length>0&&<>
-                  {c.costs.map((x,i)=><div key={i} style={{ fontSize:12,color:T.textSoft,marginTop:2 }}>{x.label}: {fmt(x.amount)}</div>)}
-                  <div style={{ fontSize:12,marginTop:4 }}><span style={{ color:T.textSoft }}>Cost: {fmt(tc)} · </span><span style={{ color:mg>=0?T.positive:"#c0392b",fontWeight:"bold" }}>Margin: {fmt(mg)}</span></div>
-                </>}
-              </div>
-              <button onClick={()=>delCatalog(c.id)} style={{ background:T.negBg,border:`1px solid #fca5a5`,color:"#c0392b",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:"bold" }}>✕</button>
-            </div>;
-          })}
+          {catalog.map(c=>{const tc=(c.costs||[]).reduce((s,x)=>s+Number(x.amount),0);const mg=c.price-tc;return <div key={c.id} style={{ background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:9,display:"flex",alignItems:"flex-start",gap:10 }}><div style={{ flex:1 }}><div style={{ fontWeight:"700",fontSize:14,color:T.text }}>{c.name}</div><div style={{ fontSize:12,color:T.textSoft,marginTop:2 }}>Sale: {fmt(c.price)}/{c.unit}</div>{c.costs?.length>0&&<>{c.costs.map((x,i)=><div key={i} style={{ fontSize:12,color:T.textSoft,marginTop:2 }}>{x.label}: {fmt(x.amount)}</div>)}<div style={{ fontSize:12,marginTop:4 }}><span style={{ color:T.textSoft }}>Cost: {fmt(tc)} · </span><span style={{ color:mg>=0?T.positive:"#c0392b",fontWeight:"bold" }}>Margin: {fmt(mg)}</span></div></>}</div><button onClick={()=>delCatalog(c.id)} style={{ background:T.negBg,border:`1px solid #fca5a5`,color:"#c0392b",borderRadius:6,padding:"5px 10px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:"bold" }}>✕</button></div>;})}
         </>}
 
-        {/* ══ EXPENSES ══ */}
+        {/* EXPENSES */}
         {view==="expenses"&&<>
           <Card style={{ marginBottom:16 }}>
             <div style={{ fontSize:10,color:ac,letterSpacing:3,marginBottom:12,fontWeight:"bold" }}>LOG EXPENSE</div>
@@ -657,21 +711,14 @@ export default function App() {
           </Card>
           {expenses.length>0&&<Card style={{ marginBottom:14 }}>
             <div style={{ fontSize:10,color:ac,letterSpacing:3,marginBottom:10,fontWeight:"bold" }}>ALL-TIME TOTALS</div>
-            {EXPENSE_CATS.map(cat=>{
-              const total=expenses.filter(e=>e.category===cat).reduce((s,e)=>s+(e.total||0),0);
-              if(!total) return null;
-              return <div key={cat} style={{ display:"flex",justifyContent:"space-between",fontSize:13,padding:"5px 0",borderBottom:`1px solid ${T.border}` }}><span style={{ color:T.textMed }}>{cat}</span><span style={{ color:"#c0392b",fontWeight:"600" }}>{fmt(total)}</span></div>;
-            })}
+            {EXPENSE_CATS.map(cat=>{const total=expenses.filter(e=>e.category===cat).reduce((s,e)=>s+(e.total||0),0);if(!total)return null;return <div key={cat} style={{ display:"flex",justifyContent:"space-between",fontSize:13,padding:"5px 0",borderBottom:`1px solid ${T.border}` }}><span style={{ color:T.textMed }}>{cat}</span><span style={{ color:"#c0392b",fontWeight:"600" }}>{fmt(total)}</span></div>;})}
             <div style={{ display:"flex",justifyContent:"space-between",fontSize:14,fontWeight:"800",paddingTop:10,marginTop:6,borderTop:`2px solid ${T.border2}` }}><span style={{ color:T.text }}>Total Expenses</span><span style={{ color:"#c0392b" }}>{fmt(expenses.reduce((s,e)=>s+(e.total||0),0))}</span></div>
           </Card>}
           <div style={{ fontSize:10,color:ac,letterSpacing:3,marginBottom:12,fontWeight:"bold" }}>EXPENSE LOG ({expenses.length})</div>
           {expenses.length===0&&<div style={{ color:T.textFaint,textAlign:"center",padding:"30px 0",fontSize:14 }}>No expenses logged yet.</div>}
-          {expenses.map(e=><div key={e.id} style={{ background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"11px 13px",marginBottom:8,display:"flex",alignItems:"flex-start",gap:10,boxShadow:"0 1px 3px rgba(0,0,0,0.05)" }}>
+          {expenses.map(e=><div key={e.id} style={{ background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"11px 13px",marginBottom:8,display:"flex",alignItems:"flex-start",gap:10 }}>
             <div style={{ flex:1 }}>
-              <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center" }}>
-                <span style={{ fontWeight:"700",fontSize:13,color:T.text }}>{e.description}</span>
-                <span style={{ color:"#c0392b",fontWeight:"800",fontSize:14 }}>{fmt(e.total)}</span>
-              </div>
+              <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center" }}><span style={{ fontWeight:"700",fontSize:13,color:T.text }}>{e.description}</span><span style={{ color:"#c0392b",fontWeight:"800",fontSize:14 }}>{fmt(e.total)}</span></div>
               <div style={{ fontSize:11,color:T.textSoft,marginTop:3 }}>{e.category} · {formatDate(e.date)}</div>
               {e.milesCost>0&&<div style={{ fontSize:11,color:T.textSoft,marginTop:2 }}>{e.miles} mi @ ${e.ratePerMile}/mi = {fmt(e.milesCost)}</div>}
             </div>
@@ -679,7 +726,7 @@ export default function App() {
           </div>)}
         </>}
 
-        {/* ══ MY BUSINESS ══ */}
+        {/* MY BUSINESS */}
         {view==="biz"&&<>
           {!bizEdit?<>
             <Card style={{ marginBottom:16,border:`1.5px solid ${ac}44` }}>
@@ -690,11 +737,11 @@ export default function App() {
               {biz.email&&<div style={{ fontSize:13,color:T.textMed }}>{biz.email}</div>}
               {biz.website&&<div style={{ fontSize:13,color:ac }}>{biz.website}</div>}
               <div style={{ marginTop:14,display:"flex",alignItems:"center",gap:10 }}>
-                <div style={{ width:24,height:24,borderRadius:6,background:biz.accentColor||"#1a6fba",border:`1px solid ${T.border}`,boxShadow:"0 1px 3px rgba(0,0,0,0.15)" }} />
+                <div style={{ width:24,height:24,borderRadius:6,background:biz.accentColor||"#1a6fba",border:`1px solid ${T.border}` }} />
                 <span style={{ fontSize:12,color:T.textSoft }}>Accent color: {biz.accentColor}</span>
               </div>
             </Card>
-            <button onClick={()=>{setBizForm(biz);setBizEdit(true);}} style={{ ...btn,width:"100%",padding:13,background:ac,color:"#fff",fontSize:12,letterSpacing:3,fontWeight:"700",boxShadow:`0 2px 8px ${ac}44` }}>EDIT BUSINESS INFO</button>
+            <button onClick={()=>{setBizForm(biz);setBizEdit(true);}} style={{ ...btn,width:"100%",padding:13,background:ac,color:"#fff",fontSize:12,letterSpacing:3,fontWeight:"700" }}>EDIT BUSINESS INFO</button>
           </>:<>
             <div style={{ fontSize:10,color:ac,letterSpacing:3,marginBottom:14,fontWeight:"bold" }}>EDIT BUSINESS</div>
             <label style={lbl(ac)}>BUSINESS NAME</label>
@@ -730,19 +777,6 @@ export default function App() {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SHARED STYLES
-// ─────────────────────────────────────────────────────────────────────────────
-const inp = {
-  display:"block", width:"100%", boxSizing:"border-box",
-  background:"#ffffff", border:`1px solid ${T.border}`, borderRadius:8,
-  color:T.text, fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
-  fontSize:14, padding:"10px 13px", outline:"none", WebkitAppearance:"none",
-  boxShadow:"0 1px 2px rgba(0,0,0,0.04)",
-};
-const lbl = (ac) => ({ display:"block", fontSize:10, color:ac||T.textSoft, letterSpacing:2, marginBottom:6, fontWeight:"600" });
-const btn = {
-  border:"none", borderRadius:8, cursor:"pointer",
-  fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
-  fontWeight:"700", transition:"all 0.15s",
-};
+const inp = { display:"block",width:"100%",boxSizing:"border-box",background:"#ffffff",border:`1px solid ${T.border}`,borderRadius:8,color:T.text,fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",fontSize:14,padding:"10px 13px",outline:"none",WebkitAppearance:"none",boxShadow:"0 1px 2px rgba(0,0,0,0.04)" };
+const lbl = (ac) => ({ display:"block",fontSize:10,color:ac||T.textSoft,letterSpacing:2,marginBottom:6,fontWeight:"600" });
+const btn = { border:"none",borderRadius:8,cursor:"pointer",fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",fontWeight:"700",transition:"all 0.15s" };
