@@ -2,6 +2,80 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PASSWORD PROTECTION
+// ─────────────────────────────────────────────────────────────────────────────
+const APP_PASSWORD = "HammermillVPI8!";
+const AUTH_KEY = "vpi_auth";
+
+function PasswordScreen({ onUnlock }) {
+  const [pw, setPw]       = useState("");
+  const [error, setError] = useState(false);
+  const [shake, setShake] = useState(false);
+
+  function attempt() {
+    if (pw === APP_PASSWORD) {
+      sessionStorage.setItem(AUTH_KEY, "true");
+      onUnlock();
+    } else {
+      setError(true);
+      setShake(true);
+      setPw("");
+      setTimeout(() => setShake(false), 600);
+    }
+  }
+
+  return (
+    <div style={{ minHeight:"100vh", background:"#f5f6f8", display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
+      <div style={{
+        background:"#fff", borderRadius:16, padding:"40px 32px",
+        boxShadow:"0 4px 24px rgba(0,0,0,0.10)", width:"100%", maxWidth:360,
+        animation: shake ? "shake 0.5s ease" : "none",
+      }}>
+        <div style={{ textAlign:"center", marginBottom:28 }}>
+          <div style={{ fontSize:11, color:"#1a6fba", letterSpacing:4, fontWeight:"bold", marginBottom:6 }}>VPI APP</div>
+          <div style={{ fontSize:22, fontWeight:"800", color:"#111827" }}>Welcome Back</div>
+          <div style={{ fontSize:13, color:"#6b7280", marginTop:6 }}>Enter your password to continue</div>
+        </div>
+        <input
+          type="password"
+          style={{
+            display:"block", width:"100%", boxSizing:"border-box",
+            border:`2px solid ${error?"#c0392b":"#dde1e7"}`,
+            borderRadius:10, fontSize:16, padding:"12px 14px",
+            outline:"none", marginBottom:14, fontFamily:"inherit",
+            background: error?"#fff5f5":"#fff", color:"#111827",
+          }}
+          placeholder="Password"
+          value={pw}
+          onChange={e=>{ setPw(e.target.value); setError(false); }}
+          onKeyDown={e=>{ if(e.key==="Enter") attempt(); }}
+          autoFocus
+        />
+        {error && <div style={{ color:"#c0392b", fontSize:12, marginBottom:10, textAlign:"center", fontWeight:"600" }}>Incorrect password. Try again.</div>}
+        <button
+          onClick={attempt}
+          style={{
+            width:"100%", padding:"13px", background:"#1a6fba", color:"#fff",
+            border:"none", borderRadius:10, fontSize:14, fontWeight:"700",
+            cursor:"pointer", letterSpacing:1, fontFamily:"inherit",
+            boxShadow:"0 2px 8px #1a6fba44",
+          }}
+        >UNLOCK</button>
+      </div>
+      <style>{`
+        @keyframes shake {
+          0%,100%{transform:translateX(0)}
+          20%{transform:translateX(-10px)}
+          40%{transform:translateX(10px)}
+          60%{transform:translateX(-8px)}
+          80%{transform:translateX(8px)}
+        }
+      `}</style>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SUPABASE CLIENT
 // ─────────────────────────────────────────────────────────────────────────────
 const supabase = createClient(
@@ -273,6 +347,7 @@ function ExchangeModal({ onAdd, onClose, ac }) {
 // MAIN APP
 // ─────────────────────────────────────────────────────────────────────────────
 export default function App() {
+  const [authed, setAuthed] = useState(()=> sessionStorage.getItem(AUTH_KEY) === "true");
   const [loading, setLoading]     = useState(true);
   const [view, setView]           = useState("invoice");
   const [printInv, setPrintInv]   = useState(null);
@@ -476,6 +551,7 @@ export default function App() {
   const navItems=[["invoice","NEW"],["history","HISTORY"],["analytics","P&L"],["customers","CLIENTS"],["catalog","ITEMS"],["expenses","EXPENSES"],["biz","MY BIZ"]];
   const canSave=invoice.customer&&invoice.lines.length>0;
 
+  if (!authed) return <PasswordScreen onUnlock={()=>setAuthed(true)} />;  
   if (loading) return <div style={{ minHeight:"100vh",background:T.bg,maxWidth:480,margin:"0 auto" }}><Spinner /></div>;
 
   return (
