@@ -317,19 +317,18 @@ function PrintView({ inv, biz, onClose, onMarkMyPrint }) {
       <style>{`
         @media print {
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-          body > * { display: none !important; }
-          body { background: #fff !important; margin: 0 !important; padding: 0 !important; }
           .no-print { display: none !important; }
+          body { background: #fff !important; margin: 0 !important; padding: 0 !important; }
           #print-area {
             display: block !important;
-            position: fixed !important;
-            top: 0 !important; left: 0 !important;
+            position: static !important;
             width: 100% !important;
+            max-width: 100% !important;
             margin: 0 !important;
             padding: 32px 40px !important;
             box-shadow: none !important;
-            z-index: 99999 !important;
             background: #fff !important;
+            font-family: Georgia, serif !important;
           }
         }
       `}</style>
