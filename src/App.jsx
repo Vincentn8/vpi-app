@@ -314,7 +314,25 @@ function PrintView({ inv, biz, onClose, onMarkMyPrint }) {
         {inv.notes&&<div style={{ marginTop:24,paddingTop:14,borderTop:"1px solid #eee" }}><div style={{ fontSize:10,color:"#999",letterSpacing:3,marginBottom:6 }}>NOTES</div><div style={{ fontSize:12,color:"#555",lineHeight:1.6 }}>{inv.notes}</div></div>}
         <div style={{ marginTop:28,textAlign:"center",fontSize:11,color:"#aaa" }}>Thank you for your business!</div>
       </div>
-      <style>{`@media print{.no-print{display:none!important;}body{background:#fff!important;}#print-area{margin:0!important;}}`}</style>
+      <style>{`
+        @media print {
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          body > * { display: none !important; }
+          body { background: #fff !important; margin: 0 !important; padding: 0 !important; }
+          .no-print { display: none !important; }
+          #print-area {
+            display: block !important;
+            position: fixed !important;
+            top: 0 !important; left: 0 !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 32px 40px !important;
+            box-shadow: none !important;
+            z-index: 99999 !important;
+            background: #fff !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }
