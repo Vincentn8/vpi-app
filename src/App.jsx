@@ -273,7 +273,7 @@ function PrintView({ inv, biz, onClose, onMarkMyPrint }) {
         <button onClick={()=>{
           const content = document.getElementById("print-area").innerHTML;
           const win = window.open("","_blank","width=800,height=900");
-          win.document.write(`<!DOCTYPE html><html><head><title>Invoice #${inv.invoiceNum}</title><style>body{margin:0;padding:40px;font-family:Georgia,serif;background:#fff;color:#111;}table{width:100%;border-collapse:collapse;}th,td{padding:8px 6px;}*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}</style></head><body>${content}</body></html>`);
+          win.document.write(`<!DOCTYPE html><html><head><title>Invoice #${inv.invoiceNum}</title><style>@page{margin:0.5in;size:letter;}@page{margin-top:0.5in;margin-bottom:0.5in;}html{-webkit-print-color-adjust:exact;print-color-adjust:exact;}body{margin:0;padding:40px;font-family:Georgia,serif;background:#fff;color:#111;}table{width:100%;border-collapse:collapse;}th,td{padding:8px 6px;}*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}</style></head><body>${content}</body></html>`);
           win.document.close();
           win.focus();
           setTimeout(()=>{ win.print(); win.close(); }, 500);
