@@ -270,7 +270,14 @@ function PrintView({ inv, biz, onClose, onMarkMyPrint }) {
   return (
     <div style={{ position:"fixed",inset:0,zIndex:1000,background:"rgba(0,0,0,0.6)",overflowY:"auto",display:"flex",flexDirection:"column" }}>
       <div className="no-print" style={{ display:"flex",gap:8,padding:"12px 14px",background:"#fff",borderBottom:`1px solid ${T.border}`,flexShrink:0,flexWrap:"wrap" }}>
-        <button onClick={()=>window.print()} style={{ ...btn,background:"#1a6fba",color:"#fff",padding:"9px 16px",fontSize:11,letterSpacing:1 }}>📄 SAVE AS PDF</button>
+        <button onClick={()=>{
+          const content = document.getElementById("print-area").innerHTML;
+          const win = window.open("","_blank","width=800,height=900");
+          win.document.write(`<!DOCTYPE html><html><head><title>Invoice #${inv.invoiceNum}</title><style>body{margin:0;padding:40px;font-family:Georgia,serif;background:#fff;color:#111;}table{width:100%;border-collapse:collapse;}th,td{padding:8px 6px;}*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}</style></head><body>${content}</body></html>`);
+          win.document.close();
+          win.focus();
+          setTimeout(()=>{ win.print(); win.close(); }, 500);
+        }} style={{ ...btn,background:"#1a6fba",color:"#fff",padding:"9px 16px",fontSize:11,letterSpacing:1 }}>📄 SAVE AS PDF</button>
         <button onClick={()=>{onMarkMyPrint&&onMarkMyPrint();}} style={{ ...btn,background:ac,color:"#fff",padding:"9px 16px",fontSize:11,letterSpacing:1 }}>🖨 MARK AS PRINTED (MY COPY)</button>
         <button onClick={onClose} style={{ ...btn,background:T.bg,border:`1px solid ${T.border}`,color:T.textMed,padding:"9px 14px",fontSize:11 }}>✕ CLOSE</button>
       </div>
@@ -314,24 +321,7 @@ function PrintView({ inv, biz, onClose, onMarkMyPrint }) {
         {inv.notes&&<div style={{ marginTop:24,paddingTop:14,borderTop:"1px solid #eee" }}><div style={{ fontSize:10,color:"#999",letterSpacing:3,marginBottom:6 }}>NOTES</div><div style={{ fontSize:12,color:"#555",lineHeight:1.6 }}>{inv.notes}</div></div>}
         <div style={{ marginTop:28,textAlign:"center",fontSize:11,color:"#aaa" }}>Thank you for your business!</div>
       </div>
-      <style>{`
-        @media print {
-          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-          .no-print { display: none !important; }
-          body { background: #fff !important; margin: 0 !important; padding: 0 !important; }
-          #print-area {
-            display: block !important;
-            position: static !important;
-            width: 100% !important;
-            max-width: 100% !important;
-            margin: 0 !important;
-            padding: 32px 40px !important;
-            box-shadow: none !important;
-            background: #fff !important;
-            font-family: Georgia, serif !important;
-          }
-        }
-      `}</style>
+      <style>{`* { -webkit-print-color-adjust: exact; print-color-adjust: exact; }`}</style>
     </div>
   );
 }
